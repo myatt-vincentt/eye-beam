@@ -17,12 +17,12 @@ export const FIRE = {
    */
   restMax: { eyes: 0.3, brows: 0.35 },
   /** How far each reading must rise above your resting face to score 1. */
-  span: { eyes: 0.18, brows: 0.35 },
+  span: { eyes: 0.18, brows: 0.38 },
   /** Score to start firing, and the score to keep firing once started. */
   enter: 1,
   exit: 0.6,
   /** Seconds the stare must hold before the charge starts. */
-  hold: 0.12,
+  hold: 0.18,
   /** Seconds below the keep score before the beams stop. */
   release: 0.2,
   /** Seconds the eyes glow brighter before the beams ignite. */
@@ -81,7 +81,9 @@ export const BURN = {
   heatMax: 2,
   /** Heat above this chars the picture; char added per unit heat per second. */
   charFrom: 0.15,
-  charRate: 1.6,
+  charRate: 2.4,
+  /** How fast heat spreads to its neighbours (the edge creeps outward). */
+  spread: 6,
   /** Seconds for heat to cool to about a third (embers glow, then fade). */
   cool: 1.1,
   /** Seconds for full char to fade back to the live picture once cooled. */

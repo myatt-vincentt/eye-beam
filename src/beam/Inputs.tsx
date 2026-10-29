@@ -55,8 +55,10 @@ export const Inputs = () => {
       live.mirrored = f.mirrored;
       const out = smooth.current;
       FACE_INPUTS.forEach((name) => {
+        const raised = name.startsWith("brow") ? live.dev.brows : 0;
         const v =
-          (f.blendshapes as Record<string, number | undefined>)[name] ?? 0;
+          ((f.blendshapes as Record<string, number | undefined>)[name] ?? 0) +
+          raised;
         out[name] = (out[name] ?? v) + (v - (out[name] ?? v)) * k;
       });
       live.blendshapes = out;

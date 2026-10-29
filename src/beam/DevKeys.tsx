@@ -48,6 +48,10 @@ const DevKeys = () => {
       fire: (on: boolean) => {
         live.dev.fire = on;
       },
+      /** Pretend to raise the brows by this much (0 = your own face). */
+      raiseBrows: (amount: number) => {
+        live.dev.brows = amount;
+      },
       /** Fix the aim at a screen point (uv, y up), or null to follow the head. */
       setAim: (at: Vec2 | null) => {
         live.dev.aim = at ? [at[0], at[1]] : null;

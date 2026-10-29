@@ -1,3 +1,31 @@
+# Eye Beam
+
+Heat beams from your eyes that burn the picture. Widen your eyes or raise your brows and, after a
+short charge with your eyes glowing, two beams shoot from your eyes to wherever your head points.
+Turn your head and they sweep across the screen, scorching the camera picture, you included,
+like paper: a white-hot point at the beam tip, a thin ember line creeping out at the edge, black
+char inside and a toasted brown halo around it, with sparks and thin smoke. Relax and the beams
+stop; the embers fade, the char greys to ash and the picture comes back, so it never fills up.
+Sound is synthesised and starts with a tap. The picture fills the whole screen.
+
+- When it fires (`src/beam/fire.ts`, unit-tested): the brows raised or both eyes wide, scored
+  against your resting face (learned in the first second and kept up to date from relaxed
+  moments only), held for a moment to start and released a moment after you relax.
+- Where it hits (`src/beam/aim.ts`, unit-tested): the head's turn from your usual pose, projected
+  forward onto the screen; the impact drags a little behind, so a sweep leaves a trail.
+- The burn is a half-resolution heat-and-char texture in screen space, drawn through one shader
+  over the camera (`src/beam/BurnField.tsx`); the beams, sparks and sound are in `Beams.tsx`,
+  `Sparks.tsx` and `audio.ts`. Every rate and size, cooling included, is in `src/beam/config.ts`.
+- The hint is the SDK's ghost face (`public/models/face-v1.glb`), widening its eyes and firing two
+  tiny beams; it leaves after the first fire. Credits in `CREDITS.md`.
+- `src/App.tsx` uses a full-window container instead of the 9:16 frame; re-apply after a template
+  upgrade.
+- Dev preview without a camera: the media switcher starts on the SDK's sample video; hold F to
+  fire, the arrow keys nudge the aim and 0 resets it; `window.__eyeBeam` has the live state. How
+  it works: `PLAN.md`.
+
+---
+
 # v2-template
 
 The Vincentt starter app: a real React + R3F + Vincentt XR SDK (`@vincentt-xr/sdk`)

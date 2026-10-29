@@ -1,6 +1,6 @@
 // The beams, drawn in screen space over the picture: one from each eye
 // centre to the impact, a white-hot core inside a red-orange glow that
-// flickers along its length, a bright flare where they hit, and a warm glow
+// flickers along its length, a small flare where they hit, and a warm glow
 // on the face around the eyes. While charging, the eyes glow brighter on
 // their own; then the beams shoot out to the target.
 import { useMemo, useRef } from "react";
@@ -66,9 +66,9 @@ const FRAGMENT = /* glsl */ `
       float ang = atan(p.y - hit.y, p.x - hit.x);
       float rays = pow(abs(sin(ang * 5.0 + time * 3.0)), 16.0) + pow(abs(sin(ang * 3.0 - time * 2.1)), 24.0);
       float pulse = 0.85 + 0.15 * noise(vec2(time * 30.0, 0.0));
-      float flare = exp(-pow(di / (w0 * 1.6), 2.0)) * 1.6
-        + exp(-di / (w0 * 2.5)) * 0.5
-        + rays * exp(-di / (w0 * 3.0)) * 0.45;
+      float flare = exp(-pow(di / (w0 * 0.9), 2.0)) * 1.2
+        + exp(-di / (w0 * 1.4)) * 0.35
+        + rays * exp(-di / (w0 * 1.8)) * 0.3;
       col += vec3(1.0, 0.75, 0.45) * flare * power * pulse;
     }
     gl_FragColor = vec4(col, 1.0);

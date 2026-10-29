@@ -1,15 +1,17 @@
-// The burn on the picture. A half-resolution heat-and-char texture lives in
-// screen space (so a burn stays where it was made while you move): each
-// frame the beam heats it along the impact's path, heat chars the picture,
-// and everything cools, embers first, until the char fades back to the live
-// picture. The camera picture is then drawn through it, just above App.tsx's
-// VideoBackground (GROUNDING.md, camera effects), for everything on screen,
-// you included:
-//   hot      a glowing white-yellow core
-//   burning  orange glowing edges where the char spreads
-//   charred  black-brown char with ragged, fibrous edges, like burnt paper
-// plus faint smoke wisps rising from hot spots and heat shimmer around them
-// and along the beams.
+// The burn on the picture, like scorched paper or photo film. A half-
+// resolution heat-and-char texture lives in screen space (so a burn stays
+// where it was made while you move): each frame the beam heats it along the
+// impact's path, the heat spreads a little so the burning edge creeps
+// outward, heat chars the picture, and everything cools. The camera picture
+// is then drawn through it, just above App.tsx's VideoBackground
+// (GROUNDING.md, camera effects), for everything on screen, you included:
+//   hot      a small white-yellow point with a thin orange ring at the beam tip
+//   burning  a thin, ragged orange ember line at the edge, with flecks past it
+//   charred  matte black char with grey ash, fine cracks and flakes, a curled
+//            lip at the edge, and a toasted brown-caramel-tan halo outside it
+// plus thin smoke wisps rising from the hot edge and heat shimmer around it
+// and along the beams. Cooling: the ember line fades first, then the char
+// greys to ash and the scorch fades back to the live picture.
 import { useEffect, useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
@@ -34,6 +36,7 @@ import { FULLSCREEN_VERTEX, NOISE } from "./shaders";
 
 const UPDATE_FRAGMENT = /* glsl */ `
   uniform sampler2D prev;
+  uniform vec2 texel;
   uniform vec2 from;
   uniform vec2 to;
   uniform float aspect;
@@ -47,12 +50,21 @@ const UPDATE_FRAGMENT = /* glsl */ `
   uniform float cool;
   uniform float charFade;
   uniform float fadeBelow;
+  uniform float spread;
   varying vec2 vUv;
   ${NOISE}
   void main() {
     vec4 s = texture2D(prev, vUv);
     float heat = s.r;
     float ch = s.g;
+    // The heat spreads a little into its neighbours, so the burning edge
+    // creeps outward while it's hot.
+    vec2 o = texel * 1.5;
+    float around = 0.25 * (
+      texture2D(prev, vUv + vec2(o.x, 0.0)).r + texture2D(prev, vUv - vec2(o.x, 0.0)).r +
+      texture2D(prev, vUv + vec2(0.0, o.y)).r + texture2D(prev, vUv - vec2(0.0, o.y)).r
+    );
+    heat = max(heat, mix(heat, around, min(1.0, spread * dt)));
     vec2 p = vec2(vUv.x * aspect, vUv.y);
     float t;
     float d = segDist(p, from, to, t);
@@ -75,6 +87,7 @@ const DISPLAY_FRAGMENT = /* glsl */ `
   uniform float aspect;
   uniform float time;
   uniform float power;
+  uniform float radius;
   uniform float beamWidth;
   uniform vec2 eyeL;
   uniform vec2 eyeR;
@@ -84,21 +97,31 @@ const DISPLAY_FRAGMENT = /* glsl */ `
   void main() {
     vec2 uv = vUv;
     vec2 p = vec2(uv.x * aspect, uv.y);
-    vec4 b = texture2D(burnTexture, uv);
-    float heat = b.r;
-    float ch = b.g;
+    vec4 b0 = texture2D(burnTexture, uv);
     // Smoke: the heat just below, drifting up and swaying.
     float smoke = 0.0;
     for (int i = 1; i <= 4; i++) {
       float fi = float(i);
-      vec2 o = vec2(sin(time * 1.3 + fi * 1.7 + uv.y * 18.0) * 0.006 * fi, -0.028 * fi);
+      vec2 o = vec2(sin(time * 1.3 + fi * 1.7 + uv.y * 18.0) * 0.006 * fi, -0.03 * fi);
       smoke += texture2D(burnTexture, uv + o).r * (1.0 - fi * 0.18);
     }
-    // Hot air along the beams.
+    // Hot air along the beams, and the impact point.
     float tt;
     float db = min(segDist(p, eyeL, hit, tt), segDist(p, eyeR, hit, tt));
     float haze = power * exp(-db / (beamWidth * 3.0));
-    if (heat + ch + smoke + haze < 0.004) {
+    float dh = length(p - hit);
+    float tip = power * exp(-pow(dh / radius, 2.0));
+    // The char around this spot (two rings of taps): the scorch reaches out
+    // past the edge, and the middle of a burn stays darkest.
+    float near = 0.0;
+    for (int i = 0; i < 8; i++) {
+      float a = float(i) * 0.785 + 0.3;
+      float rr = i < 4 ? 0.022 : 0.05;
+      near += texture2D(burnTexture, uv + vec2(cos(a) / aspect, sin(a)) * rr).g;
+    }
+    near /= 8.0;
+
+    if (b0.r + b0.g + near + smoke + haze + tip < 0.004) {
       gl_FragColor = vec4(texture2D(cameraTexture, uv).rgb, 1.0);
       return;
     }
@@ -106,48 +129,83 @@ const DISPLAY_FRAGMENT = /* glsl */ `
       noise(p * vec2(38.0, 22.0) + vec2(0.0, -time * 4.0)),
       noise(p * vec2(38.0, 22.0) + vec2(7.3, -time * 4.6))
     ) - 0.5;
-    float shim = clamp(heat, 0.0, 1.0) * 0.007 + clamp(smoke, 0.0, 1.0) * 0.003 + haze * 0.005;
+    float shim = clamp(b0.r, 0.0, 1.0) * 0.005 + clamp(smoke, 0.0, 1.0) * 0.003 + haze * 0.005;
     vec3 cam = texture2D(cameraTexture, uv + wob * shim).rgb;
 
-    // Burnt paper: the burn is read through a small ragged warp (big tears
-    // and fine fibres), so its outline frays instead of following a circle.
-    vec2 tear = vec2(fbm(p * 18.0), fbm(p * 18.0 + 5.3)) - 0.5;
-    vec2 fibre = vec2(fbm(p * vec2(64.0, 20.0)), fbm(p * vec2(20.0, 64.0) + 2.0)) - 0.5;
-    vec4 w = texture2D(burnTexture, uv + (tear * 0.03 + fibre * 0.012) * vec2(1.0 / aspect, 1.0));
-    heat = max(heat * 0.6, w.r);
-    ch = w.g;
-    // How much char it takes to blacken each spot (paper burns unevenly).
-    float edge = 0.12 + 0.5 * fbm(p * 11.0) + 0.16 * (fbm(p * 48.0) - 0.5);
-    float charM = smoothstep(edge - 0.03, edge + 0.03, ch);
-    float deep = smoothstep(edge, edge + 0.45, ch);
-    // Scorch: the picture toasts brown just ahead of the char.
-    float scorch = smoothstep(edge * 0.3, edge, ch);
+    // Read the burn through a small ragged warp (tears and fine fibres), so
+    // its outline frays like paper instead of following a circle.
+    vec2 tear = vec2(fbm(p * 14.0), fbm(p * 14.0 + 5.3)) - 0.5;
+    vec2 fibre = vec2(noise(p * vec2(110.0, 34.0)), noise(p * vec2(34.0, 110.0) + 4.0)) - 0.5;
+    vec4 b = texture2D(burnTexture, uv + (tear * 0.022 + fibre * 0.007) * vec2(1.0 / aspect, 1.0));
+    float heat = b.r;
+    float ch = b.g;
+    float grain = noise(p * 260.0);
+
+    // Where the paper gives way: char above this level is burnt through.
+    float e = 0.42 + 0.2 * (fbm(p * 9.0) - 0.5) + 0.1 * (noise(p * 70.0) - 0.5);
+    float d = ch - e;
+    float inside = smoothstep(-0.012, 0.012, d);
+
+    // Scorch halo: the picture itself heat-browned, tan to caramel to dark
+    // brown towards the edge, with a paper grain.
+    float tg = clamp(max(ch / e, near * 1.5) + (grain - 0.5) * 0.12, 0.0, 1.0);
+    vec3 toast = mix(
+      mix(vec3(0.97, 0.82, 0.6), vec3(0.8, 0.5, 0.22), smoothstep(0.2, 0.6, tg)),
+      vec3(0.32, 0.16, 0.06),
+      smoothstep(0.6, 1.0, tg)
+    );
     float l = dot(cam, vec3(0.299, 0.587, 0.114));
-    vec3 toast = mix(cam, vec3(l) * vec3(1.0, 0.68, 0.4), 0.7) * (1.0 - 0.55 * scorch);
-    vec3 c = mix(cam, toast, scorch);
-    // Char: brown at the edge, black deeper in, with a grain.
-    float grain = 0.7 + 0.6 * fbm(p * 40.0 + 3.0);
-    vec3 charCol = mix(vec3(0.2, 0.1, 0.045), vec3(0.03, 0.022, 0.018), deep) * grain;
-    c = mix(c, charCol + cam * 0.04, charM);
+    vec3 browned = mix(cam, vec3(l), 0.5) * toast * 1.1;
+    vec3 c = mix(cam, browned, smoothstep(0.02, 0.35, tg));
 
-    // Burning: glowing orange edges where the char spreads, while it's hot.
-    float hotness = smoothstep(0.06, 0.7, heat);
-    float flick = 0.75 + 0.25 * noise(p * 50.0 + time * vec2(2.1, -3.3));
-    vec3 ember = vec3(1.0, 0.36, 0.05);
-    float rim = smoothstep(edge - 0.22, edge - 0.02, ch) * (1.0 - smoothstep(edge, edge + 0.1, ch));
-    c += ember * rim * hotness * flick * 2.6;
-    // Embers: glowing cracks in the char that fade as it cools.
-    float vein = 1.0 - abs(fbm(p * 26.0 + vec2(0.0, time * 0.05)) * 2.0 - 1.0);
-    float crack = smoothstep(0.84, 0.97, vein);
-    c += ember * charM * smoothstep(0.02, 0.5, heat) * (crack * 2.4 + 0.08) * flick;
-    // Hot: an orange bloom, then a white-yellow core.
-    c += vec3(1.0, 0.42, 0.08) * smoothstep(0.7, 1.4, heat) * 0.6;
-    c = mix(c, vec3(1.0, 0.94, 0.72), smoothstep(1.15, 1.8, heat) * 0.92);
+    // Char: matte black, greying towards ash as it cools (the middle stays
+    // darkest), with ash mottling, fine cracks and light ash flecks.
+    float ash = smoothstep(1.0, e + 0.06, ch) * (1.0 - 0.75 * smoothstep(0.45, 0.95, near));
+    float mott = fbm(p * 45.0 + 7.0);
+    vec3 charC = mix(vec3(0.028, 0.025, 0.023), vec3(0.3, 0.29, 0.28), ash * 0.75);
+    charC *= 0.75 + 0.5 * mott;
+    charC *= 0.9 + 0.2 * grain;
+    vec2 fc = fract(p * 190.0) - 0.5;
+    float flake = step(0.93, hash(floor(p * 190.0) + 11.0)) * smoothstep(0.4, 0.15, length(fc));
+    charC += vec3(0.24, 0.235, 0.23) * flake * (0.35 + 0.65 * ash);
+    float crack = abs(noise(p * 115.0 + 2.0) * 2.0 - 1.0);
+    charC *= mix(0.45, 1.0, smoothstep(0.012, 0.04, crack));
+    // Curl: a lighter lifted lip right at the edge, a shadow just inside it.
+    float lip = smoothstep(0.0, 0.025, d) * (1.0 - smoothstep(0.025, 0.07, d));
+    float shade = smoothstep(0.05, 0.1, d) * (1.0 - smoothstep(0.1, 0.22, d));
+    charC += vec3(0.17, 0.13, 0.1) * lip * (1.0 - 0.7 * ash);
+    charC *= 1.0 - 0.4 * shade;
+    c = mix(c, charC, inside);
 
-    // Faint grey wisps rising above hot spots.
-    float wisp = fbm(vec2(p.x * 9.0 + sin(p.y * 6.0 + time) * 0.4, p.y * 6.0 - time * 0.55));
-    float sm = clamp(smoke * 0.35, 0.0, 1.0) * smoothstep(0.35, 0.75, wisp);
-    c = mix(c, vec3(0.5, 0.48, 0.46), sm * 0.45);
+    // Burning: a thin, ragged ember line at the edge while it's hot, and a
+    // few tiny flecks just past it.
+    float hot = smoothstep(0.06, 0.45, heat);
+    float flick = 0.7 + 0.3 * noise(p * 60.0 + time * vec2(1.7, -2.9));
+    float jag = smoothstep(0.25, 0.75, noise(p * vec2(150.0, 120.0) + vec2(0.0, time * 1.5)));
+    float line = smoothstep(-0.09, -0.015, d) * (1.0 - smoothstep(0.0, 0.04, d));
+    vec3 ember = vec3(1.0, 0.42, 0.07);
+    c += ember * line * hot * (0.35 + 0.9 * jag) * flick * 2.2;
+    c += vec3(1.0, 0.86, 0.55) * line * smoothstep(0.45, 1.0, heat) * jag * 0.7;
+    vec2 cell = floor(p * 240.0);
+    vec2 cf = fract(p * 240.0) - 0.5;
+    float dot1 = smoothstep(0.35, 0.1, length(cf));
+    float fleck = step(0.975, hash(cell + floor(time * 8.0) * 1.37)) * dot1;
+    float past = smoothstep(-0.2, -0.05, d) * (1.0 - inside);
+    c += ember * fleck * past * hot * 2.4;
+    // Dying ember specks in the char that blink out quickly.
+    float speck = step(0.993, hash(cell + 3.0)) * dot1;
+    c += ember * speck * inside * smoothstep(0.35, 0.9, heat) * flick * 2.2;
+
+    // Hot impact: a small white-yellow point with a thin orange ring.
+    float core = exp(-pow(dh / (radius * 0.22), 2.0)) * power;
+    float ring = exp(-pow((dh - radius * 0.42) / (radius * 0.07), 2.0)) * power;
+    c = mix(c, vec3(1.0, 0.96, 0.82), clamp(core * 1.3, 0.0, 1.0));
+    c += ember * ring * (0.8 + 0.4 * jag);
+
+    // Thin grey wisps rising from the hot edge.
+    float wisp = fbm(vec2(p.x * 24.0 + sin(p.y * 9.0 + time) * 0.6, p.y * 4.0 - time * 0.7));
+    float sm = clamp(smoke * 0.3, 0.0, 1.0) * smoothstep(0.55, 0.8, wisp);
+    c = mix(c, vec3(0.55, 0.54, 0.53), sm * 0.4);
     gl_FragColor = vec4(c, 1.0);
   }
 `;
@@ -181,6 +239,7 @@ const useBurnTargets = () =>
     const material = new ShaderMaterial({
       uniforms: {
         prev: { value: null as Texture | null },
+        texel: { value: [1 / 4, 1 / 4] },
         from: { value: [0, 0] },
         to: { value: [0, 0] },
         aspect: { value: 1 },
@@ -194,6 +253,7 @@ const useBurnTargets = () =>
         cool: { value: BURN.cool },
         charFade: { value: BURN.charFade },
         fadeBelow: { value: BURN.fadeBelow },
+        spread: { value: BURN.spread },
       },
       vertexShader: FULLSCREEN_VERTEX,
       fragmentShader: UPDATE_FRAGMENT,
@@ -224,6 +284,7 @@ export const BurnField = () => {
       aspect: { value: 1 },
       time: { value: 0 },
       power: { value: 0 },
+      radius: { value: BURN.radius },
       beamWidth: { value: 0.02 },
       eyeL: { value: [0, 0] },
       eyeR: { value: [0, 0] },
@@ -293,6 +354,7 @@ export const BurnField = () => {
     const readRt = field.targets[field.read];
     const writeRt = field.targets[1 - field.read];
     u.prev.value = readRt.texture;
+    u.texel.value = [1 / readRt.width, 1 / readRt.height];
     u.from.value = live.burnFrom;
     u.to.value = live.burnTo;
     u.aspect.value = aspect;
@@ -305,6 +367,7 @@ export const BurnField = () => {
     u.cool.value = BURN.cool;
     u.charFade.value = BURN.charFade;
     u.fadeBelow.value = BURN.fadeBelow;
+    u.spread.value = BURN.spread;
     const before = gl.getRenderTarget();
     gl.setRenderTarget(writeRt);
     gl.render(field.scene, field.camera);
@@ -315,6 +378,7 @@ export const BurnField = () => {
     display.aspect.value = aspect;
     display.time.value = state.clock.elapsedTime;
     display.power.value = live.power * live.reach;
+    display.radius.value = burnRadius();
     display.beamWidth.value = live.eyeGap * BEAM.width;
     display.eyeL.value = [live.eyeL[0] * aspect, live.eyeL[1]];
     display.eyeR.value = [live.eyeR[0] * aspect, live.eyeR[1]];

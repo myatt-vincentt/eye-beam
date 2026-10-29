@@ -47,6 +47,8 @@ export const live = {
   /** Dev only: the F key, arrow-key nudges, and a fixed aim for scripted tests. */
   dev: {
     fire: false,
+    /** Added to the brow readings: a pretend brow raise through the real detector. */
+    brows: 0,
     nudge: [0, 0] as Vec2,
     aim: null as Vec2 | null,
   },
