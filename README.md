@@ -8,6 +8,7 @@ char inside and a toasted brown halo around it, with sparks and thin smoke. Rela
 stop; the embers fade, the char greys to ash and the picture comes back, so it never fills up.
 Sound is synthesised and starts with a tap. The picture fills the whole screen.
 
+- Thumbnail: `public/images/eye-beam-thumbnail.jpg` (the share image).
 - When it fires (`src/beam/fire.ts`, unit-tested): the brows raised or both eyes wide, scored
   against your resting face (learned in the first second and kept up to date from relaxed
   moments only), held for a moment to start and released a moment after you relax.
