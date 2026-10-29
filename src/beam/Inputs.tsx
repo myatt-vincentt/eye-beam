@@ -2,14 +2,21 @@
 // (where the beams start), the head turn (where they hit), and the stare
 // (when they fire, fire.ts). Then it moves the impact along, dragging a
 // little behind the head, and steps the coarse burn grid for the sound.
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { personLeftSign } from "@vincentt-xr/sdk";
-import { useFaceInfo, useIrisTracking } from "@vincentt-xr/sdk/tracking";
+import { personLeftSign, personSide, XRModel } from "@vincentt-xr/sdk";
+import {
+  createFaceInfoTarget,
+  getFaceInfo,
+  useXRModelNode,
+  type XRModelNodeFaceTracking,
+} from "@vincentt-xr/sdk/low-level";
+import { IRIS_LANDMARKS, useFaceInfo } from "@vincentt-xr/sdk/tracking";
 
 import { aimTarget, type Vec2 } from "./aim";
 import { burnGrid, stepBurnGrid, type BurnGrid } from "./burn.sim";
-import { AIM, BEAM, BURN, FACE_FPS, FIRE } from "./config";
+import { AIM, BEAM, BURN, EYES, FACE_FPS, FIRE } from "./config";
+import { oneEuro2 } from "./oneEuro";
 import { stepFire } from "./fire";
 import { live } from "./live";
 
@@ -26,17 +33,37 @@ const FACE_EASE = 14;
 
 const easeOut = (t: number) => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
 
+/** The person's own left or right iris centre in a face reading (feed space). */
+const irisAt = (
+  face: {
+    landmarks: ArrayLike<{ x: number; y: number }>;
+    mirrored: boolean;
+  } | null,
+  side: "left" | "right",
+) =>
+  face
+    ? face.landmarks[IRIS_LANDMARKS[personSide(side, face.mirrored)].center]
+    : undefined;
+
 /** The impact radius for the face's size on screen (aspect space). */
 export const burnRadius = () =>
   BURN.radius * Math.min(1.35, Math.max(0.7, live.eyeGap / 0.14));
 
 export const Inputs = () => {
   const face = useFaceInfo({ active: true, numFaces: 1, targetFps: FACE_FPS });
-  const iris = useIrisTracking({
-    numFaces: 1,
-    targetFps: FACE_FPS,
-    smoothing: 6,
-  });
+  // The face model's newest result, read every frame (the React reading
+  // above arrives a frame or more later): the beams start exactly on it.
+  const node = useXRModelNode<XRModelNodeFaceTracking>(XRModel.FACE_TRACKER);
+  const latest = useMemo(() => createFaceInfoTarget(), []);
+  const steady = useMemo(
+    () => ({
+      l: oneEuro2(EYES.filter),
+      r: oneEuro2(EYES.filter),
+      last: [NaN, NaN],
+      at: 0,
+    }),
+    [],
+  );
   const faceRef = useRef(face);
   faceRef.current = face;
   const smooth = useRef<Record<string, number>>({});
@@ -90,18 +117,45 @@ export const Inputs = () => {
         );
       }
     }
-    const eyes = iris.result;
-    if (eyes.detected) {
-      // Image space (y down) → screen uv (y up).
-      live.eyeL[0] = eyes.left.center.x;
-      live.eyeL[1] = 1 - eyes.left.center.y;
-      live.eyeR[0] = eyes.right.center.x;
-      live.eyeR[1] = 1 - eyes.right.center.y;
+    // The beam origins: the iris centres of the newest face result, as is.
+    const now = node ? getFaceInfo(node, 0, latest) : null;
+    const l = irisAt(now, "left");
+    const rr = irisAt(now, "right");
+    if (!l || !rr) {
+      steady.l.reset();
+      steady.r.reset();
+    } else if (l.x !== steady.last[0] || l.y !== steady.last[1]) {
+      // A new result: filter it (feed space, y down → screen uv, y up).
+      const sdt = t - steady.at;
+      steady.at = t;
+      steady.last[0] = l.x;
+      steady.last[1] = l.y;
+      steady.l.next(l.x, 1 - l.y, sdt);
+      steady.r.next(rr.x, 1 - rr.y, sdt);
+    }
+    if (l && rr) {
+      // Move on along the eyes' motion: the picture on screen is a little
+      // newer than the face result it was read from.
+      const ahead = Math.min(0.1, t - steady.at + EYES.latency);
+      [steady.l, steady.r].forEach((e, i) => {
+        const out = i ? live.eyeR : live.eyeL;
+        out[0] = e.point[0] + e.velocity[0] * ahead;
+        out[1] = e.point[1] + e.velocity[1] * ahead;
+      });
       const aspect = state.size.width / Math.max(1, state.size.height);
       live.eyeGap = Math.hypot(
         (live.eyeL[0] - live.eyeR[0]) * aspect,
         live.eyeL[1] - live.eyeR[1],
       );
+    }
+    // The React reading, for the dev check of the lock.
+    const fa = irisAt(f, "left");
+    const fb = irisAt(f, "right");
+    if (fa && fb) {
+      live.rawEyeL[0] = fa.x;
+      live.rawEyeL[1] = 1 - fa.y;
+      live.rawEyeR[0] = fb.x;
+      live.rawEyeR[1] = 1 - fb.y;
     }
 
     // When to fire.

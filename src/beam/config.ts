@@ -5,6 +5,22 @@
 /** Face inference rate. Every face reader asks for the same rate. */
 export const FACE_FPS = 30;
 
+/**
+ * The beam origins sit on the iris centres of the face model's newest
+ * result, read every frame. Only a very light One Euro filter steadies a
+ * still reading's shake; its cutoff rises fast with motion, so the beams
+ * never trail the eyes. Uv units (screen fractions per second).
+ */
+export const EYES = {
+  filter: { minCutoff: 3, beta: 150, dCutoff: 10 },
+  /**
+   * Between face results the origins carry on along the eyes' motion; this
+   * adds extra seconds of lead if a device shows the picture ahead of its
+   * face results (0 measured best on the test clips).
+   */
+  latency: 0,
+};
+
 /** Firing: widen your eyes or raise your brows, against your resting face. */
 export const FIRE = {
   /** Seconds of face to learn your resting face from. */

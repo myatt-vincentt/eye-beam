@@ -18,6 +18,9 @@ export const live = {
   /** The two eye centres (the person's own left and right). */
   eyeL: [0.45, 0.62] as Vec2,
   eyeR: [0.55, 0.62] as Vec2,
+  /** The same eye centres straight from the latest face reading (dev check). */
+  rawEyeL: [0.45, 0.62] as Vec2,
+  rawEyeR: [0.55, 0.62] as Vec2,
   /** Eye-to-eye distance in screen heights (the face's size on screen). */
   eyeGap: 0.14,
 
